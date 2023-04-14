@@ -1,0 +1,8 @@
+%YAML:1.0
+
+imu_an:
+  imu_topic: /imu_raw
+  imu_name: CM-40608
+  data_save_path: /Users/likun/projects/imu_utils/data/
+  max_time_min: 120
+  max_cluster: 100

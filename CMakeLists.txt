@@ -10,13 +10,13 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g -fPIC")
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin REQUIRED
-    roscpp
-    std_msgs
-    geometry_msgs
-    nav_msgs
-    code_utils
-    )
+# find_package(catkin REQUIRED
+#     roscpp
+#     std_msgs
+#     geometry_msgs
+#     nav_msgs
+#     code_utils
+#     )
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -24,12 +24,9 @@ find_package(OpenCV REQUIRED)
 find_package(Ceres REQUIRED)
 find_package(Eigen3  REQUIRED)
 include_directories(
-  ${catkin_INCLUDE_DIRS}
   ${CERES_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIR}
 )
-
-catkin_package()
 
 set(ACC_LIB_SOURCE_FILES
     ${PROJECT_SOURCE_DIR}/src/acc_lib/allan_acc.cpp
@@ -46,4 +43,4 @@ add_executable(imu_an
     ${ACC_LIB_SOURCE_FILES}
     )
 
-target_link_libraries(imu_an ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
+target_link_libraries(imu_an ${OpenCV_LIBS} ${CERES_LIBRARIES})

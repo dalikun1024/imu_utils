@@ -9,18 +9,34 @@
 #include "acc_lib/fitallan_acc.h"
 #include "gyr_lib/allan_gyr.h"
 #include "gyr_lib/fitallan_gyr.h"
-#include <code_utils/ros_utils.h>
-#include <geometry_msgs/Vector3Stamped.h>
 #include <iostream>
 #include <mutex>
 #include <opencv2/opencv.hpp>
 #include <queue>
-#include <ros/ros.h>
-#include <sensor_msgs/Imu.h>
+#include <fstream>
+
+
+struct LinearAcce {
+    double x;
+    double y;
+    double z;
+};
+
+struct AngularVelocity {
+    double x;
+    double y;
+    double z;
+};
+
+struct ImuData {
+    AngularVelocity angular_velocity;
+    LinearAcce linear_acceleration;
+    double stamp;
+};
 
 std::mutex m_buf;
 
-std::queue< sensor_msgs::ImuConstPtr > imu_buf;
+std::queue< ImuData* > imu_buf;
 imu::AllanGyr* gyr_x;
 imu::AllanGyr* gyr_y;
 imu::AllanGyr* gyr_z;
@@ -34,12 +50,12 @@ int max_time_min = 10;
 std::string data_save_path;
 
 void
-imu_callback( const sensor_msgs::ImuConstPtr& imu_msg )
+imu_callback( ImuData *imu_msg )
 {
     //    m_buf.lock( );
-    //    imu_buf.push( imu_msg );
+    imu_buf.push( imu_msg );
     //    m_buf.unlock( );
-    double time = imu_msg->header.stamp.toSec( );
+    double time = imu_msg->stamp / 1000.0;
     gyr_x->pushRadPerSec( imu_msg->angular_velocity.x, time );
     gyr_y->pushRadPerSec( imu_msg->angular_velocity.y, time );
     gyr_z->pushRadPerSec( imu_msg->angular_velocity.z, time );
@@ -201,29 +217,65 @@ writeYAML( const std::string data_path,
     fs.release( );
 }
 
+struct InputParameters {
+    std::string imu_topic;
+    std::string imu_name;
+    std::string data_save_path;
+    int max_time_min;
+    int max_cluster;
+};
+
+bool loadParams(const std::string param_path, InputParameters &parameters) {
+	cv::FileStorage fs;
+	fs.open(param_path, cv::FileStorage::READ);
+	if (!fs.isOpened()) {
+		std::cerr << "ERROR: open param_file error, file name: " << param_path << std::endl;
+		return false;
+	}
+
+	cv::FileNode imu_an = fs["imu_an"];
+	imu_an["imu_topic"] >> parameters.imu_topic;
+    imu_an["imu_name"] >> parameters.imu_name;
+    imu_an["data_save_path"] >> parameters.data_save_path;
+    imu_an["max_time_min"] >> parameters.max_time_min;
+    imu_an["max_cluster"] >> parameters.max_cluster;
+	return true;
+}
+
+int loadImuData(const std::string data_path) {
+    std::ifstream imu_data_file(data_path, std::ifstream::in);
+    std::string line;
+    int i = 0;
+    while(std::getline(imu_data_file, line)) {
+        if (line.size() < 10) {
+            break;
+        }
+        std::cout << i++ << " " << line << std::endl;
+        std::stringstream ss(line);
+        ImuData imu_data;
+        ss >> imu_data.stamp;
+        ss >> imu_data.linear_acceleration.x >> imu_data.linear_acceleration.y >> imu_data.linear_acceleration.z;
+        ss >> imu_data.angular_velocity.x >> imu_data.angular_velocity.y >> imu_data.angular_velocity.z;
+        imu_callback(&imu_data);
+    }
+    
+    return 0;
+}
+
 int
 main( int argc, char** argv )
 {
-    ros::init( argc, argv, "gyro_test" );
-    ros::NodeHandle n( "~" );
-    ros::console::set_logger_level( ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug );
-
     std::string IMU_TOPIC;
     std::string IMU_NAME;
     int max_cluster;
 
-    IMU_TOPIC      = ros_utils::readParam< std::string >( n, "imu_topic" );
-    IMU_NAME       = ros_utils::readParam< std::string >( n, "imu_name" );
-    data_save_path = ros_utils::readParam< std::string >( n, "data_save_path" );
-    max_time_min   = ros_utils::readParam< int >( n, "max_time_min" );
-    max_cluster    = ros_utils::readParam< int >( n, "max_cluster" );
-
-    ros::Subscriber sub_imu = n.subscribe( IMU_TOPIC, //
-                                           20000000,
-                                           imu_callback,
-                                           ros::TransportHints( ).tcpNoDelay( ) );
-    //    ros::Publisher pub = n.advertise< geometry_msgs::Vector3Stamped >( ALLAN_TOPIC,
-    //    2000 );
+    InputParameters parameters;
+    loadParams(argv[2], parameters);
+    IMU_TOPIC = parameters.imu_topic;
+    IMU_NAME = parameters.imu_name;
+    data_save_path = parameters.data_save_path;
+    max_time_min = parameters.max_time_min;
+    max_cluster = parameters.max_cluster;
 
     gyr_x = new imu::AllanGyr( "gyr x", max_cluster );
     gyr_y = new imu::AllanGyr( "gyr y", max_cluster );
@@ -232,14 +284,8 @@ main( int argc, char** argv )
     acc_y = new imu::AllanAcc( "acc y", max_cluster );
     acc_z = new imu::AllanAcc( "acc z", max_cluster );
     std::cout << "wait for imu data." << std::endl;
-    ros::Rate loop( 100 );
 
-    //    ros::spin( );
-    while ( !end )
-    {
-        loop.sleep( );
-        ros::spinOnce( );
-    }
+    loadImuData(argv[1]);
 
     ///
     gyr_x->calc( );
